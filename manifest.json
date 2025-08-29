@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Search Results Analyzer",
+  "version": "1.0",
+  "description": "Extract and analyze Google search results data",
+
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs",
+    "windows"
+  ],
+
+  "host_permissions": [
+    "https://www.google.com/*",
+    "https://google.com/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.google.com/search*", "https://google.com/search*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

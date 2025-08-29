@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Search Results Analyzer</title>
+    <style>
+        body {
+            width: 100%;
+            height: 100;
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            box-sizing: border-box;
+            overflow-x: auto;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .export-btn {
+            background: #2196F3;
+        }
+        
+        .export-btn:hover {
+            background: #1976D2;
+        }
+        
+        .clear-btn {
+            background: #f44336;
+        }
+        
+        .clear-btn:hover {
+            background: #d32f2f;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        
+        .status.success {
+            background: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+        
+        .status.error {
+            background: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+        
+        .status.info {
+            background: #d9edf7;
+            color: #31708f;
+            border: 1px solid #bce8f1;
+        }
+        
+        .status.warning {
+            background: #fcf8e3;
+            color: #8a6d3b;
+            border: 1px solid #faebcc;
+        }
+        
+        .table-container {
+            height: calc(100vh - 250px);
+            overflow: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            min-width: 1200px;
+        }
+        
+        th {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            min-width: 120px;
+        }
+        
+        td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .rank-cell {
+            text-align: center;
+            font-weight: bold;
+            color: #2196F3;
+            min-width: 60px;
+        }
+        
+        .link-cell {
+            max-width: 300px;
+            word-break: break-all;
+        }
+        
+        /* Enhanced Controls Styles */
+        .enhanced-controls {
+            margin-bottom: 20px;
+        }
+        
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .mode-option {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            padding: 8px 12px;
+            border-radius: 20px;
+            border: 2px solid;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .mode-option input[type="radio"] {
+            margin-right: 5px;
+        }
+        
+        .mode-option.single {
+            background: #f8f9fa;
+            border-color: #e9ecef;
+        }
+        
+        .mode-option.manual {
+            background: #e3f2fd;
+            border-color: #bbdefb;
+        }
+        
+        .mode-option.auto {
+            background: #e8f5e8;
+            border-color: #c8e6c9;
+        }
+        
+        .mode-option:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .quick-navigation {
+            display: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .quick-nav-header {
+            color: white;
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .quick-nav-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .quick-nav-btn {
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            flex: 1;
+            min-width: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+        
+        .quick-nav-btn.next {
+            background: #28a745;
+            color: white;
+            box-shadow: 0 2px 8px rgba(40,167,69,0.3);
+        }
+        
+        .quick-nav-btn.prev {
+            background: #ffc107;
+            color: #212529;
+            box-shadow: 0 2px 8px rgba(255,193,7,0.3);
+        }
+        
+        .quick-nav-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.15);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            color: rgba(255,255,255,0.9);
+        }
+        
+        .page-navigation {
+            display: none;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .page-nav-buttons {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .page-nav-btn {
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        .page-nav-btn.next {
+            background: #2196F3;
+            color: white;
+        }
+        
+        .page-nav-btn.prev {
+            background: #ff9800;
+            color: white;
+        }
+        
+        .page-nav-info {
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .auto-mode-settings {
+            display: none;
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .auto-settings-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .auto-setting-item {
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .auto-setting-item select {
+            margin-left: 5px;
+            padding: 4px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .auto-settings-note {
+            font-size: 11px;
+            color: #666;
+        }
+        
+        /* Badge Styles */
+        .badge {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        
+        .badge-result-main {
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+        
+        .badge-result-competitor {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+        
+        .badge-result-referral {
+            background: #fff3e0;
+            color: #f57c00;
+            border: 1px solid #ffcc02;
+        }
+        
+        .badge-result-other {
+            background: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #e1bee7;
+        }
+        
+        .badge-rank-our {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        
+        .badge-rank-competitor {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+        
+        .badge-rank-main {
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+        
+        .badge-rank-other {
+            background: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #e1bee7;
+        }
+        
+        .badge-exam {
+            background: #e1f5fe;
+            color: #0277bd;
+            border: 1px solid #b3e5fc;
+        }
+        
+        .badge-variation {
+            background: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #e1bee7;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1200px) {
+            .table-container {
+                overflow-x: auto;
+            }
+        }
+        
+        @media (max-height: 600px) {
+            .table-container {
+                height: calc(100vh - 200px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>🔍 Intellectual Works Private Limited</h2>
+        <p>Extract and analyze Google search results with advanced navigation - Full Screen Mode</p>
+    </div>
+    
+    <!-- Enhanced Controls -->
+    <div class="enhanced-controls">
+        <div class="mode-selector">
+            <!-- <label class="mode-option single">
+                <input type="radio" name="extractMode" value="single" id="singleMode" checked>
+                <span>📄 Current Page Only</span>
+            </label>
+            
+            <label class="mode-option manual">
+                <input type="radio" name="extractMode" value="manual" id="manualMode">
+                <span>👆 Manual Multi-Page</span>
+            </label> -->
+            
+            <label class="mode-option auto" style="visibility: hidden;">
+                <input type="radio" name="extractMode" value="auto" id="autoMode">
+                <span>🤖 Auto Next (30 Results)</span>
+            </label>
+        </div>
+        
+        <!-- <div id="quickNavigation" class="quick-navigation">
+            <div class="quick-nav-header">
+                <span style="margin-right: 8px;">⚡</span>
+                <span>Quick Navigation & Extract</span>
+            </div>
+            <div class="quick-nav-buttons">
+                <button id="nextExtractBtn" class="quick-nav-btn next">
+                    <span style="margin-right: 6px;">➡️</span>
+                    <span>Next + Extract</span>
+                </button>
+                <button id="prevExtractBtn" class="quick-nav-btn prev">
+                    <span style="margin-right: 6px;">⬅️</span>
+                    <span>Prev + Extract</span>
+                </button>
+            </div>
+            <div class="quick-nav-info">
+                <span id="quickCurrentPageInfo">Page: 1</span>
+                <span id="quickProgressInfo">Results: 0/30</span>
+                <span id="quickStatusInfo">Ready</span>
+            </div>
+        </div> -->
+        
+        <div id="pageNavigation" class="page-navigation">
+            <div class="page-nav-buttons">
+                <button id="nextPageBtn" class="page-nav-btn next">
+                    ➡️ Go to Next Page & Extract
+                </button>
+                <button id="prevPageBtn" class="page-nav-btn prev">
+                    ⬅️ Go to Previous Page
+                </button>
+            </div>
+            <div class="page-nav-info">
+                <span id="currentPageInfo">Current: Page 1</span>
+                <span id="progressInfo">Progress: 0/30</span>
+            </div>
+        </div>
+        
+        <div id="autoModeSettings" class="auto-mode-settings">
+            <div class="auto-settings-row">
+                <label class="auto-setting-item">
+                    Target Results: 
+                    <select id="targetResults">
+                        <option value="10">10 Results</option>
+                        <option value="20">20 Results</option>
+                        <option value="30" selected>30 Results</option>
+                        <option value="50">50 Results</option>
+                    </select>
+                </label>
+                <label class="auto-setting-item">
+                    Delay: 
+                    <select id="pageDelay">
+                        <option value="3">3 seconds</option>
+                        <option value="5" selected>5 seconds</option>
+                        <option value="7">7 seconds</option>
+                        <option value="10">10 seconds</option>
+                    </select>
+                </label>
+            </div>
+            <div class="auto-settings-note">
+                ⚡ Auto mode will navigate through pages automatically until target is reached
+            </div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="extractBtn">📊 Extract Data</button>
+        <button id="exportBtn" class="export-btn">📥 Export CSV</button>
+        <button id="clearBtn" class="clear-btn">🗑️ Clear Data</button>
+        <span id="resultCount" style="margin-left: auto; font-weight: bold;"></span>
+    </div>
+    
+    <div id="status" class="status" style="display: none;"></div>
+    
+    <div class="table-container">
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>Rank Position</th>
+                    <th>Result Link</th>
+                    <th>Target URL</th>
+                    <th>Result Type</th>
+                    <th>Rank Type</th>
+                    <th>Date</th>
+                    <th>Exam Code</th>  
+                    <th>Variation</th>
+                    <th>Location</th>
+                    <th>Keywords</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody">
+                <tr>
+                    <td colspan="10" style="text-align: center; padding: 40px; color: #666;">
+                        <div style="font-size: 18px; margin-bottom: 10px;">🚀</div>
+                        <div style="font-size: 16px; margin-bottom: 8px;">Ready to Extract!</div>
+                        <div style="font-size: 13px; opacity: 0.8;">
+                            1. Navigate to Google search results<br>
+                            2. Select extraction mode<br>
+                            3. Click extract to get started
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
