@@ -38,31 +38,56 @@ class SERPBackground {
         switch (request.action) {
           case 'openPopup':
             this.openPopup();
-            return true;
+            sendResponse(true);
+            break;
             
           case 'extractFromPage':
             const results = await this.extractFromPage(request.tabId, request.pageNum, request.query);
-            return { results };
+            sendResponse({ results });
+            break;
             
           case 'extractFromHiddenTab':
-            const hiddenResults = await this.extractFromHiddenTab(request.pageNum, request.query);
-            return { results: hiddenResults };
+            const hiddenResults = await this.extractFromHiddenTab(request.pageNum, request.query, sender.tab);
+            sendResponse({ results: hiddenResults });
+            break;
             
           case 'autoExtractResults':
-            const autoResults = await this.autoExtractResults(request.query, request.targetResults);
-            return { results: autoResults };
+            const autoResults = await this.autoExtractResults(request.query, request.targetResults, sender.tab);
+            sendResponse({ results: autoResults });
+            break;
+            
+          case 'processAndStoreData':
+            const processedData = await this.processAndStoreData(request.rawData, request.query);
+            sendResponse({ success: true, data: processedData });
+            break;
+            
+          case 'getSERPData':
+            const data = await this.getSERPData();
+            sendResponse(data);
+            break;
             
           case 'clearSERPData':
             this.clearSERPData();
-            return { success: true };
+            sendResponse({ success: true });
+            break;
+            
+          case 'exportToCSV':
+            const csvData = await this.exportToCSV();
+            sendResponse({ csvData });
+            break;
+            
+          case 'navigateToPage':
+            await chrome.tabs.update(sender.tab.id, { url: request.url });
+            sendResponse({ success: true });
+            break;
             
           default:
             console.log('Unknown action:', request.action);
-            return false;
+            sendResponse({ error: 'Unknown action' });
         }
       } catch (error) {
         console.error('Error handling message:', error);
-        return { error: error.message };
+        sendResponse({ error: error.message });
       }
   }
   
@@ -91,71 +116,8 @@ class SERPBackground {
       });
   }
 
-  async handleMessage(request, sender, sendResponse) {
-    try {
-      switch (request.action) {
-        case 'processAndStoreData':
-          const processedData = await this.processAndStoreData(request.rawData, request.query);
-          sendResponse({ success: true, data: processedData });
-          break;
-          
-        case 'getSERPData':
-          const data = await this.getSERPData();
-          sendResponse(data);
-          break;
-          
-        case 'clearSERPData':
-          await this.clearSERPData();
-          // Reset hidden tab when data is cleared
-          if (this.hiddenTabId) {
-            try {
-              await chrome.tabs.remove(this.hiddenTabId);
-            } catch (e) {
-              console.log('Tab already closed');
-            }
-            this.hiddenTabId = null;
-          }
-          sendResponse({ success: true });
-          break;
-          
-        case 'exportToCSV':
-          const csvData = await this.exportToCSV();
-          sendResponse({ csvData });
-          break;
-          
-        case 'navigateToPage':
-          await chrome.tabs.update(sender.tab.id, { url: request.url });
-          sendResponse({ success: true });
-          break;
-          
-        case 'extractFromPage':
-          // Keep original functionality for compatibility
-          const results = await this.extractFromPage(sender.tab.id, request.pageNum, request.query);
-          sendResponse({ results });
-          break;
-          
-        case 'extractFromHiddenTab':
-          // New method for hidden tab extraction
-          const hiddenResults = await this.extractFromHiddenTab(request.pageNum, request.query);
-          sendResponse({ results: hiddenResults });
-          break;
-          
-        case 'autoExtractResults':
-          const autoResults = await this.autoExtractResults(request.query, request.targetResults);
-          sendResponse({ results: autoResults });
-          break;
-          
-        default:
-          sendResponse({ error: 'Unknown action' });
-      }
-    } catch (error) {
-      console.error('Error in handleMessage:', error);
-      sendResponse({ error: error.message });
-    }
-  }
-  
-  // New method for hidden tab extraction
-  async extractFromHiddenTab(pageNum, query) {
+  // Fixed extractFromHiddenTab function that properly handles incognito mode
+  async extractFromHiddenTab(pageNum, query, senderTab = null) {
     try {
       // Always close previous hidden tab if it exists
       if (this.hiddenTabId) {
@@ -168,31 +130,80 @@ class SERPBackground {
         this.hiddenTabId = null;
       }
       
-      // Get all current windows
-      const windows = await chrome.windows.getAll();
+      // Determine if we need incognito mode
+      let isIncognitoMode = false;
+      
+      if (senderTab) {
+        isIncognitoMode = senderTab.incognito;
+        console.log('Sender tab incognito status:', isIncognitoMode);
+      } else {
+        // Fallback: try to get current window
+        try {
+          const windows = await chrome.windows.getAll({ populate: true });
+          const currentWindow = windows.find(w => w.focused);
+          if (currentWindow) {
+            isIncognitoMode = currentWindow.incognito;
+          }
+        } catch (e) {
+          console.log('Could not detect incognito mode from windows');
+        }
+      }
+      
+      console.log('Creating hidden tab in incognito mode:', isIncognitoMode);
+      
       let hiddenWindow = null;
       
-      // Create a new window that's positioned off-screen
-      hiddenWindow = await chrome.windows.create({
+      // Create window options
+      const windowOptions = {
         url: this.buildGoogleSearchUrl(query, pageNum),
         type: 'popup',
         focused: false,
         width: 1,
         height: 1,
-        left: -9999,  // Position off-screen
-        top: -9999    // Position off-screen
-      });
+        left: -9999,
+        top: -9999
+      };
+      
+      // CRITICAL FIX: Only add incognito property if we're in incognito mode
+      if (isIncognitoMode) {
+        windowOptions.incognito = true;
+      }
+      
+      try {
+        hiddenWindow = await chrome.windows.create(windowOptions);
+      } catch (error) {
+        console.error('Failed to create window with incognito:', error);
+        // If incognito window creation fails, try without incognito flag
+        if (isIncognitoMode) {
+          console.log('Retrying without incognito flag...');
+          delete windowOptions.incognito;
+          hiddenWindow = await chrome.windows.create(windowOptions);
+        } else {
+          throw error;
+        }
+      }
       
       // Get the tab from the hidden window
       const tabs = await chrome.tabs.query({ windowId: hiddenWindow.id });
       this.hiddenTabId = tabs[0].id;
       
-      // Wait for page to load
-      await new Promise((resolve) => {
-        const listener = (tabId, changeInfo) => {
-          if (tabId === this.hiddenTabId && changeInfo.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            setTimeout(resolve, 2000); // Extra delay for page to fully render
+      console.log('Created hidden tab ID:', this.hiddenTabId, 'in', isIncognitoMode ? 'incognito' : 'normal', 'mode');
+      
+      // Wait for page to load with better error handling
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          chrome.tabs.onUpdated.removeListener(listener);
+          reject(new Error('Page load timeout'));
+        }, 30000);
+        
+        const listener = (tabId, changeInfo, tab) => {
+          if (tabId === this.hiddenTabId) {
+            if (changeInfo.status === 'complete') {
+              clearTimeout(timeout);
+              chrome.tabs.onUpdated.removeListener(listener);
+              // Add extra delay for Google to fully render
+              setTimeout(resolve, 3000);
+            }
           }
         };
         chrome.tabs.onUpdated.addListener(listener);
@@ -212,13 +223,26 @@ class SERPBackground {
       return results;
     } catch (error) {
       console.error('Hidden tab extraction error:', error);
+      
+      // Clean up any leftover windows/tabs
+      if (this.hiddenTabId) {
+        try {
+          const tab = await chrome.tabs.get(this.hiddenTabId);
+          if (tab && tab.windowId) {
+            await chrome.windows.remove(tab.windowId);
+          }
+        } catch (e) {
+          console.log('Cleanup failed, tab/window may already be closed');
+        }
+        this.hiddenTabId = null;
+      }
+      
       throw error;
     }
   }
-  
-  // New method for auto extraction in background
-  async autoExtractResults(query, targetResults = 30) {
-    // Always start from page 1 regardless of previous state
+
+  // Updated autoExtractResults function with proper incognito handling
+  async autoExtractResults(query, targetResults = 30, senderTab = null) {
     let currentPage = 1;
     let totalExtracted = 0;
     let allResults = [];
@@ -238,8 +262,8 @@ class SERPBackground {
       while (totalExtracted < targetResults) {
         console.log(`Auto-extracting page ${currentPage}... (${totalExtracted}/${targetResults})`);
         
-        // Extract from current page via hidden tab
-        const results = await this.extractFromHiddenTab(currentPage, query);
+        // Pass sender tab information to maintain incognito context
+        const results = await this.extractFromHiddenTab(currentPage, query, senderTab);
         
         if (results && results.length > 0) {
           allResults = allResults.concat(results);
@@ -250,8 +274,10 @@ class SERPBackground {
             break;
           }
           
-          // Move to next page
           currentPage++;
+          
+          // Add delay between pages
+          await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
           console.log('No more results found. Auto-extraction stopped.');
           break;
@@ -336,7 +362,7 @@ class SERPBackground {
         location: rawItem.location || 'Desktop',
         title: rawItem.title || '',
         snippet: rawItem.snippet || '',
-        keywords: rawItem.keywords || '', // ADD THIS LINE - Missing keywords mapping!
+        keywords: rawItem.keywords || '',
         query: query || '',
         extractedAt: new Date().toISOString(),
         id: this.generateId(),
@@ -383,60 +409,67 @@ class SERPBackground {
     return SERPBackground.OUR_SITES.some(site => urlLower.includes(site)) ? 'Our Site' : 'Competitor';
   }
 
+  // Updated extractExamCode function
   extractExamCode(query, url, title = '') {
-    const text = `${query} ${url} ${title}`.toLowerCase();
-    
-    const examPatterns = [
-      /\b([a-z]{2,4}\s*[-\s]*\d{2,4})\b/gi,
-      /\b([a-z]{2,4}\s*[a-z]{2,4}\s*c\d{2})\b/gi,
-      /\b([a-z]{2,4}\s*\d{3})\b/gi,
-      /\b(\d{3,4})\b/gi
-    ];
-
-    for (const pattern of examPatterns) {
-      const matches = text.match(pattern);
-      if (matches && matches.length > 0) {
-        return matches[0].trim().replace(/[-\s]+/g, ' ').trim();
-      }
-    }
-    
-    return '';
-  }
-
-  determineVariation(query, url, title = '') {
     const originalQuery = query.toLowerCase().trim();
     
-    if (originalQuery === 'legacy') return 'exam';
-    
-    const examPatterns = [
-      /\b([a-z]{2,4}\s*[-\s]*\d{2,4})\b/gi,
-      /\b([a-z]{2,4}\s*[a-z]{2,4}\s*c\d{2})\b/gi,
-      /\b([a-z]{2,4}\s*\d{3})\b/gi,
-      /\b(\d{3,4})\b/gi
+    // Define variation keywords
+    const variationKeywords = [
+      'dumps', 'dump', 'exams', 'exam', 'exam dumps', 'questions', 'question','exam questions','practice test','practice exam','PDF','exam pdf',
+      'dumps pdf','pdf questions',' questions and answers',' questions & answers', ' question and answer',' questions and answer',' questions & answer',' question and answers', ' question & answers',
+      'practise questions', 'practise question', 
+      'pdf', 'pdfs'
     ];
-
-    let foundExamCode = '';
-    let examCodePosition = -1;
-
-    for (const pattern of examPatterns) {
-      pattern.lastIndex = 0;
-      const match = pattern.exec(originalQuery);
-      if (match) {
-        foundExamCode = match[0];
-        examCodePosition = match.index;
+    
+    // Sort keywords by length (longest first) to match longer phrases first
+    const sortedKeywords = variationKeywords.sort((a, b) => b.length - a.length);
+    
+    // Check if any variation keyword exists in the query
+    let foundKeyword = '';
+    
+    for (const keyword of sortedKeywords) {
+      if (originalQuery.includes(keyword.trim())) {
+        foundKeyword = keyword.trim();
         break;
       }
     }
-
-    if (!foundExamCode) return originalQuery || 'exam';
-
-    const afterExamCode = originalQuery.substring(examCodePosition + foundExamCode.length).trim();
-    if (afterExamCode) return afterExamCode;
     
-    const beforeExamCode = originalQuery.substring(0, examCodePosition).trim();
-    if (beforeExamCode) return beforeExamCode;
+    if (foundKeyword) {
+      // Remove the variation keyword and return the remaining part as exam code
+      let examCode = originalQuery.replace(foundKeyword, '').trim();
+      // Clean up any extra spaces
+      examCode = examCode.replace(/\s+/g, ' ').trim();
+      return examCode;
+    } else {
+      // No variation keyword found, return entire query as exam code
+      return originalQuery;
+    }
+  }
+
+  // Updated determineVariation function
+  determineVariation(query, url, title = '') {
+    const originalQuery = query.toLowerCase().trim();
     
-    return 'exam';
+    // Define variation keywords
+    const variationKeywords = [
+      'dumps', 'dump', 'exams', 'exam', 'exam dumps', 'questions', 'question','exam questions','practice test','practice exam','PDF','exam pdf',
+      'dumps pdf','pdf questions',' questions and answers',' questions & answers', ' question and answer',' questions and answer',' questions & answer',' question and answers', ' question & answers',
+      'practise questions', 'practise question', 
+      'pdf', 'pdfs'
+    ];
+    
+    // Sort keywords by length (longest first) to match longer phrases first
+    const sortedKeywords = variationKeywords.sort((a, b) => b.length - a.length);
+    
+    // Check if any variation keyword exists in the query
+    for (const keyword of sortedKeywords) {
+      if (originalQuery.includes(keyword.trim())) {
+        return keyword.trim();
+      }
+    }
+    
+    // No variation keyword found
+    return 'Null';
   }
 
   extractDomain(url) {
@@ -544,7 +577,7 @@ class SERPBackground {
               item.examCode || '',
               item.variation || '',
               item.location || '',
-              `"${(item.keywords || '').replace(/"/g, '""')}"`, // Add keywords column
+              `"${(item.keywords || '').replace(/"/g, '""')}"`,
           ];
           csvRows.push(row.join(','));
       });
@@ -559,6 +592,3 @@ class SERPBackground {
 
 // Initialize background service
 new SERPBackground();
-
-
-
